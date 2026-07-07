@@ -192,6 +192,15 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   write here change what runs outside the sandbox?"
 - `/nix/var/nix/daemon-socket/socket` is allowed conditionally (multi-user
   nix only) so `nix build` inside the sandbox can reach the daemon.
+- Playwright (e.g. Claude's playwright-cli skill) works inside the sandbox:
+  `PLAYWRIGHT_BROWSERS_PATH` is pinned into the per-project cache, so
+  browsers install and run without extra grants. Never point it at the
+  host's `~/.cache/ms-playwright` — browser binaries are executables, and
+  a swapped one would run unsandboxed the next time the *host* uses
+  playwright. If per-project browser downloads (~400MB+) hurt, a shared
+  `~/.cache/agent-sandbox/ms-playwright` for all sandboxes is the middle
+  ground — it accepts that one instance could tamper with browsers another
+  instance executes (inside its own sandbox).
 - The wrapped binary is the **system-installed** Claude Code: the script
   resolves the first `claude` on PATH that is not the wrapper itself
   (calling plain `claude` would recurse). Two candidates are skipped:
@@ -206,3 +215,31 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   `nono learn -- <command>` or explain denials with `nono why <path>`,
   then extend the script — prefer narrow `--read`/`--allow-file` grants
   over broad `--allow`.
+- The `CARGO_HOME`/`XDG_CACHE_HOME` redirection relies on nono passing
+  env vars into the sandbox (it does — it even injects credentials via
+  env). The failure mode is loud, not silent: if the vars didn't
+  propagate, cargo would hit the read-only `~/.cargo` and error. Still,
+  sanity-check the first `cargo build` through the wrapper.
+
+### Residual risks (accepted, know them)
+
+- **`~/.claude` is shared r+w across ALL sandboxed instances** (profile
+  grant; Claude can't function without its state dir). One instance could
+  in principle tamper with state other sessions consume — the classic
+  vector is `settings.json` hooks, which execute shell commands. Managing
+  `settings.json` declaratively (home-manager/nix, read-only) closes that
+  hole; transcripts and `~/.claude/local` (self-update) remain shared.
+- **The project directory itself.** The agent can edit `devenv.nix`,
+  `.envrc`, or anything that runs when *you* enter the shell, and
+  artifacts it builds (`target/`, etc.) are attacker-controlled if the
+  session was compromised. direnv's re-`allow` prompt after `.envrc`
+  changes is a guard; reviewing diffs before re-entering the shell or
+  running artifacts is the habit that matters. This is the irreducible
+  trust boundary of any coding agent.
+- **Outbound network is open by default**, so exfiltration of anything
+  readable in the sandbox is possible in principle. For sensitive
+  projects add `--block-net` or `--network-profile`/`--allow-domain`
+  filtering to the wrapper.
+- The nix daemon socket is safe by design — the daemon validates store
+  writes — but it does let the sandbox realize arbitrary derivations
+  (i.e. download and build things).

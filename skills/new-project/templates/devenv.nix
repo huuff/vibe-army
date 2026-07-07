@@ -30,7 +30,7 @@
     trim-trailing-whitespace.enable = true;
 
     # --- static analysis: nix ---
-    nixfmt-rfc-style.enable = true;
+    nixfmt.enable = true; # RFC 166 style; nixfmt >= 1.0 (nixfmt-rfc-style is the deprecated alias)
     statix.enable = true;
     deadnix.enable = true;
 
@@ -93,6 +93,9 @@
         mkdir $"($cache)/cargo" $"($cache)/xdg"
         $env.CARGO_HOME = $"($cache)/cargo"
         $env.XDG_CACHE_HOME = $"($cache)/xdg"
+        # Playwright browsers are executables too — same poisoning rules.
+        # Pinned explicitly so it doesn't depend on playwright's XDG handling.
+        $env.PLAYWRIGHT_BROWSERS_PATH = $"($cache)/ms-playwright"
 
         let socket = "/nix/var/nix/daemon-socket/socket"
         let socket_grant = if ($socket | path exists) { ["--allow-file" $socket] } else { [] }
