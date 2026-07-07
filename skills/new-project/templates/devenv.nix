@@ -97,6 +97,13 @@
         mkdir $"($cache)/cargo" $"($cache)/xdg"
         $env.CARGO_HOME = $"($cache)/cargo"
         $env.XDG_CACHE_HOME = $"($cache)/xdg"
+        # Redirect TMPDIR into the per-project cache too, so Claude's own
+        # scratch (task output, /tmp/claude-$UID) lands somewhere the sandbox
+        # can read. We deliberately do NOT grant the host's /tmp: it holds live
+        # IPC sockets (X11, ssh-agent, gpg-agent) that are capabilities, not
+        # data, and is a poisoning surface for unsandboxed tools' tempfiles.
+        mkdir $"($cache)/tmp"
+        $env.TMPDIR = $"($cache)/tmp"
         # Playwright browsers are executables too — same poisoning rules.
         # Pinned explicitly so it doesn't depend on playwright's XDG handling.
         $env.PLAYWRIGHT_BROWSERS_PATH = $"($cache)/ms-playwright"

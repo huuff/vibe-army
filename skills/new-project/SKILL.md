@@ -196,7 +196,7 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   `claude`. It sits before the user's `...$args` so a caller can still override
   (e.g. a stricter `--permission-mode`).
 - The sandbox never writes the caches host builds trust: the wrapper
-  redirects `CARGO_HOME` and `XDG_CACHE_HOME` into
+  redirects `CARGO_HOME`, `XDG_CACHE_HOME` and `TMPDIR` into
   `~/.cache/agent-sandbox/<project-slug>` (the only extra write grant).
   Sharing the real `~/.cargo` or `~/.cache` would be a poisoning vector —
   cargo does **not** re-verify extracted sources under `registry/src`
@@ -207,6 +207,18 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   instance in project A could otherwise poison project B's builds through
   the common cache. Cost of the split: crates and eval caches are
   downloaded once per project for sandboxed use.
+- `TMPDIR` is redirected (not `/tmp` granted) on purpose. Claude Code writes
+  its own scratch — task output, `/tmp/claude-$UID` — under `TMPDIR`, and the
+  sandbox must be able to read it back, or every tool's stdout comes back
+  "output unavailable". Pointing `TMPDIR` at the per-project cache fixes that
+  with no new grant. Do **not** `--allow /tmp` to solve this: the host `/tmp`
+  holds live IPC sockets that are *capabilities, not data* — X11
+  (`/tmp/.X11-unix` → keylogging, screen capture, input injection),
+  ssh-agent/gpg-agent sockets (sign auth challenges → lateral movement without
+  ever reading a key) — plus it's a poisoning surface for other tools'
+  predictably-named tempfiles. That re-opens exactly what the profile denies.
+  nono has no private-tmpfs option, so redirection is the clean fix; if some
+  subprocess hardcodes `/tmp`, grant a narrow subpath, never the whole dir.
 - Threat model for grants: what matters is not what runs *inside* the
   sandbox but what processes *outside* it later trust. Whole `~/.cargo`
   is doubly bad (`~/.cargo/bin` is on PATH, `~/.cargo/config.toml` can
