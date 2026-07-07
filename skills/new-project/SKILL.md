@@ -153,12 +153,14 @@ scripts.my-script = {
 };
 ```
 
-Two nushell-specific notes:
+Nushell-specific notes:
 
 - A script that receives CLI arguments needs `def --wrapped main [...args]`;
   `--wrapped` stops nu from parsing flags meant for the wrapped command.
 - Nu interpolation is `$"(...)"`, which doesn't collide with nix `''...''`
   strings — no `''${}` escaping needed, unlike bash.
+- Nu `mkdir` already has `mkdir -p` semantics: creates parents, no error if
+  the directory exists (there is no `-p` flag).
 
 ## The sandboxed `claude` script — design notes
 
@@ -170,18 +172,20 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   config; denies credentials, keychains, shell history/configs, and
   browser data. Workdir access level is read+write.
 - `--allow-cwd` grants the project dir non-interactively.
-- Write grants added on top for things builds inside the sandbox touch:
-  `~/.cargo/registry` + `~/.cargo/git` (crate caches), `~/.cache/nix`
-  (eval cache), `~/.cache/devenv`, `~/.cache/pre-commit` (hook envs —
-  needed so `git commit` works inside the sandbox). Missing paths are
-  filtered out at runtime.
+- The sandbox never writes the caches host builds trust: the wrapper
+  redirects `CARGO_HOME` and `XDG_CACHE_HOME` into `~/.cache/agent-sandbox`
+  (the only extra write grant). Sharing the real `~/.cargo` or `~/.cache`
+  would be a poisoning vector — cargo does **not** re-verify extracted
+  sources under `registry/src` (only `.crate` tarballs are checksummed),
+  and nix trusts its eval cache — so a prompt-injected agent could plant
+  code that runs in your later *unsandboxed* builds. Cost of the split:
+  crates and eval caches are downloaded once more for sandboxed use.
 - Threat model for grants: what matters is not what runs *inside* the
-  sandbox but what processes *outside* it later trust. Never grant write
-  to all of `~/.cargo` — `~/.cargo/bin` is on PATH and
-  `~/.cargo/config.toml` can set rustc wrappers/runners, so either would
-  let sandboxed code plant something that runs unsandboxed later. Apply
-  the same test to any new grant: "could a write here change what runs
-  outside the sandbox?"
+  sandbox but what processes *outside* it later trust. Whole `~/.cargo`
+  is doubly bad (`~/.cargo/bin` is on PATH, `~/.cargo/config.toml` can
+  set rustc wrappers), but even the narrow cache subdirs are unsafe, per
+  the previous point. Apply the same test to any new grant: "could a
+  write here change what runs outside the sandbox?"
 - `/nix/var/nix/daemon-socket/socket` is allowed conditionally (multi-user
   nix only) so `nix build` inside the sandbox can reach the daemon.
 - The wrapped binary is the **system-installed** Claude Code: the script

@@ -58,7 +58,8 @@
   # node/python runtimes and git config, and denies credentials, shell
   # history, keychains and browser data. On top of that we grant:
   #   - the project directory (profile sets workdir access to read+write)
-  #   - caches that builds running inside the sandbox must write
+  #   - a sandbox-only cache dir; CARGO_HOME/XDG_CACHE_HOME are redirected
+  #     there so the sandbox never writes caches that host builds trust
   #   - the nix daemon socket, so `nix build` & friends work (multi-user nix)
   #
   # The wrapped binary is the system-installed Claude Code: the first
@@ -80,22 +81,20 @@
           error make { msg: "no claude found on PATH outside the devenv profile; install Claude Code system-wide" }
         }
 
-        # Write grants for build caches only. Deliberately NOT all of
-        # ~/.cargo: writable ~/.cargo/bin (on PATH) or ~/.cargo/config.toml
-        # (rustc wrappers/runners) would let sandboxed code plant something
-        # that later runs unsandboxed.
-        let cache_grants = [
-          $"($env.HOME)/.cargo/registry"
-          $"($env.HOME)/.cargo/git"
-          $"($env.HOME)/.cache/nix"
-          $"($env.HOME)/.cache/devenv"
-          $"($env.HOME)/.cache/pre-commit"
-        ] | where {|p| $p | path exists } | each {|p| ["--allow" $p] } | flatten
+        # The sandbox gets its own caches, never the ones host builds
+        # trust: cargo does not re-verify extracted sources under
+        # registry/src, and nix trusts its eval cache, so a write grant on
+        # the shared ~/.cargo or ~/.cache would let sandboxed code poison
+        # later unsandboxed builds.
+        let cache = $"($env.HOME)/.cache/agent-sandbox"
+        mkdir $"($cache)/cargo" $"($cache)/xdg"
+        $env.CARGO_HOME = $"($cache)/cargo"
+        $env.XDG_CACHE_HOME = $"($cache)/xdg"
 
         let socket = "/nix/var/nix/daemon-socket/socket"
         let socket_grant = if ($socket | path exists) { ["--allow-file" $socket] } else { [] }
 
-        exec nono run --profile claude-code --allow-cwd ...$cache_grants ...$socket_grant -- ($real_claude | first) ...$args
+        exec nono run --profile claude-code --allow-cwd --allow $cache ...$socket_grant -- ($real_claude | first) ...$args
       }
     '';
   };
