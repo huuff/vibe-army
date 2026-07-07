@@ -62,6 +62,10 @@
   #     there so the sandbox never writes caches that host builds trust
   #   - the nix daemon socket, so `nix build` & friends work (multi-user nix)
   #
+  # Claude runs with --dangerously-skip-permissions: nono is the real
+  # enforcement boundary, so Claude's in-app prompts add nothing but friction.
+  # The flag is safe *because* of the sandbox, not in spite of it.
+  #
   # The wrapped binary is the system-installed Claude Code: the first
   # `claude` on PATH that is not this wrapper itself. The wrapper shows up
   # twice, via the devenv profile and via its own store path (a raw
@@ -100,7 +104,11 @@
         let socket = "/nix/var/nix/daemon-socket/socket"
         let socket_grant = if ($socket | path exists) { ["--allow-file" $socket] } else { [] }
 
-        exec nono run --profile claude-code --allow-cwd --allow $cache ...$socket_grant -- ($real_claude | first) ...$args
+        # nono is the enforcement boundary, so Claude's own in-app permission
+        # prompts are redundant friction: skip them and let the agent run
+        # autonomously inside the sandbox. Put it before ...$args so the user
+        # can still override (e.g. pass a stricter --permission-mode).
+        exec nono run --profile claude-code --allow-cwd --allow $cache ...$socket_grant -- ($real_claude | first) --dangerously-skip-permissions ...$args
       }
     '';
   };

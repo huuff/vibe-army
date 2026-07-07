@@ -189,6 +189,12 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   config; denies credentials, keychains, shell history/configs, and
   browser data. Workdir access level is read+write.
 - `--allow-cwd` grants the project dir non-interactively.
+- Claude is launched with `--dangerously-skip-permissions`. This is the whole
+  point of the sandbox: nono enforces access at the OS level, so Claude's own
+  in-app permission prompts are redundant friction. The flag is safe *because*
+  it runs inside nono, not in spite of it — never add it to an unsandboxed
+  `claude`. It sits before the user's `...$args` so a caller can still override
+  (e.g. a stricter `--permission-mode`).
 - The sandbox never writes the caches host builds trust: the wrapper
   redirects `CARGO_HOME` and `XDG_CACHE_HOME` into
   `~/.cache/agent-sandbox/<project-slug>` (the only extra write grant).
