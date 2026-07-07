@@ -85,8 +85,11 @@
         # trust: cargo does not re-verify extracted sources under
         # registry/src, and nix trusts its eval cache, so a write grant on
         # the shared ~/.cargo or ~/.cache would let sandboxed code poison
-        # later unsandboxed builds.
-        let cache = $"($env.HOME)/.cache/agent-sandbox"
+        # later unsandboxed builds. The cache is keyed per project so one
+        # sandboxed instance cannot poison another project's builds either;
+        # the grant covers only this project's subdirectory.
+        let slug = $env.PWD | str replace --all "/" "-" | str trim --char "-"
+        let cache = $"($env.HOME)/.cache/agent-sandbox/($slug)"
         mkdir $"($cache)/cargo" $"($cache)/xdg"
         $env.CARGO_HOME = $"($cache)/cargo"
         $env.XDG_CACHE_HOME = $"($cache)/xdg"

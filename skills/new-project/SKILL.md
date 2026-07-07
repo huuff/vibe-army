@@ -173,13 +173,17 @@ the shell `claude` transparently means "Claude Code in a nono sandbox":
   browser data. Workdir access level is read+write.
 - `--allow-cwd` grants the project dir non-interactively.
 - The sandbox never writes the caches host builds trust: the wrapper
-  redirects `CARGO_HOME` and `XDG_CACHE_HOME` into `~/.cache/agent-sandbox`
-  (the only extra write grant). Sharing the real `~/.cargo` or `~/.cache`
-  would be a poisoning vector — cargo does **not** re-verify extracted
-  sources under `registry/src` (only `.crate` tarballs are checksummed),
-  and nix trusts its eval cache — so a prompt-injected agent could plant
-  code that runs in your later *unsandboxed* builds. Cost of the split:
-  crates and eval caches are downloaded once more for sandboxed use.
+  redirects `CARGO_HOME` and `XDG_CACHE_HOME` into
+  `~/.cache/agent-sandbox/<project-slug>` (the only extra write grant).
+  Sharing the real `~/.cargo` or `~/.cache` would be a poisoning vector —
+  cargo does **not** re-verify extracted sources under `registry/src`
+  (only `.crate` tarballs are checksummed), and nix trusts its eval
+  cache — so a prompt-injected agent could plant code that runs in your
+  later *unsandboxed* builds. The cache is keyed per project because
+  sandboxes must not share caches with each other either: a compromised
+  instance in project A could otherwise poison project B's builds through
+  the common cache. Cost of the split: crates and eval caches are
+  downloaded once per project for sandboxed use.
 - Threat model for grants: what matters is not what runs *inside* the
   sandbox but what processes *outside* it later trust. Whole `~/.cargo`
   is doubly bad (`~/.cargo/bin` is on PATH, `~/.cargo/config.toml` can
