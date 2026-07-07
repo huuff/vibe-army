@@ -7,8 +7,14 @@ description: Scaffold a new project with a Nix flake export, a standalone devenv
 
 Creates a project that is simultaneously:
 
-1. **A flake** — consumable from nix (`packages.default`, `overlays.default`,
-   optionally `nixosModules`/`homeManagerModules`).
+1. **A flake** — consumable from nix. It always exports *something* useful, but
+   **what** depends on the project: a build (`packages.default` +
+   `overlays.default`) only when the project actually produces a buildable
+   artifact. For config-only projects (Terraform/OpenTofu, dotfiles, plain
+   scripts, docs) a `packages.default` that just copies the files into the store
+   is useless — export `nixosModules`/`homeManagerModules`/`lib`, dev tooling,
+   or nothing at all instead. When unsure whether a package export makes sense,
+   **ask the user**. See step 3.
 2. **A devenv shell** — standalone (`devenv.yaml` + `devenv.nix` + `devenv.lock`),
    deliberately **not** via the flake's `devShells`. Rationale: the flake
    integration needs `--impure`, ties devenv to the flake's nixpkgs, and
@@ -64,7 +70,18 @@ In `devenv.nix`, enable `languages.<lang>` and the matching hooks:
 | Go | `languages.go.enable = true;` | `golangci-lint`, `gofmt` |
 | Nix-only | `languages.nix.enable = true;` (already on) | already covered |
 
-In `nix/package.nix`, replace the stub with the right builder:
+First decide whether a `packages.default` even belongs here. Export a package
+**only when the project produces a real buildable artifact** (a binary, a
+library, a bundled app). For projects that are just config or files consumed by
+some other tool — Terraform/OpenTofu, Ansible, k8s manifests, dotfiles, docs —
+a derivation that copies those files into the nix store buys nothing; skip it
+and use the "Pure nix config/modules" branch below (export modules/`lib`, or
+just the devenv shell + hooks). If it's genuinely unclear which case you're in,
+**ask the user before writing `nix/package.nix`** rather than defaulting to a
+useless copy-to-store derivation.
+
+When a package does make sense, replace the stub in `nix/package.nix` with the
+right builder:
 
 - Rust: `rustPlatform.buildRustPackage { cargoLock.lockFile = ../Cargo.lock; ... }`
 - Go: `buildGoModule { vendorHash = ...; ... }`
