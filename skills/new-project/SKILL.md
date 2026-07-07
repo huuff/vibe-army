@@ -137,11 +137,12 @@ consume the project via `github:<owner>/<repo>` flake ref.
 
 ## Scripts: bash vs nushell
 
-devenv `scripts.*` run with bash by default. Keep bash for trivial exec
-wrappers (like the `claude` sandbox script). When a script grows real
-logic — parsing JSON/structured output, filtering lists, tables, more than
-a couple of conditionals — write it in nushell instead; it will usually be
-clearer:
+devenv `scripts.*` run with bash by default. Keep bash for trivial one-line
+exec wrappers. When a script has real logic — filtering lists, parsing
+JSON/structured output, more than a couple of conditionals — write it in
+nushell instead; it will usually be clearer. The `claude` wrapper in the
+template is the example: its PATH-filtering loop is a `which --all | where`
+pipeline in nu instead of bash `while read` + `case` gymnastics.
 
 ```nix
 scripts.my-script = {
@@ -152,10 +153,17 @@ scripts.my-script = {
 };
 ```
 
+Two nushell-specific notes:
+
+- A script that receives CLI arguments needs `def --wrapped main [...args]`;
+  `--wrapped` stops nu from parsing flags meant for the wrapped command.
+- Nu interpolation is `$"(...)"`, which doesn't collide with nix `''...''`
+  strings — no `''${}` escaping needed, unlike bash.
+
 ## The sandboxed `claude` script — design notes
 
-Defined as `scripts.claude` in `devenv.nix`, so inside the shell `claude`
-transparently means "Claude Code in a nono sandbox":
+Defined as `scripts.claude` in `devenv.nix` (written in nushell), so inside
+the shell `claude` transparently means "Claude Code in a nono sandbox":
 
 - `--profile claude-code` (built-in) grants r+w `~/.claude*`, read-only
   `~/.cargo`, `~/.rustup`, `/nix/store`, node/python runtimes, and git
@@ -163,9 +171,17 @@ transparently means "Claude Code in a nono sandbox":
   browser data. Workdir access level is read+write.
 - `--allow-cwd` grants the project dir non-interactively.
 - Write grants added on top for things builds inside the sandbox touch:
-  `~/.cargo` (registry/git caches), `~/.cache/nix` (eval cache),
-  `~/.cache/devenv`, `~/.cache/pre-commit` (hook envs — needed so
-  `git commit` works inside the sandbox).
+  `~/.cargo/registry` + `~/.cargo/git` (crate caches), `~/.cache/nix`
+  (eval cache), `~/.cache/devenv`, `~/.cache/pre-commit` (hook envs —
+  needed so `git commit` works inside the sandbox). Missing paths are
+  filtered out at runtime.
+- Threat model for grants: what matters is not what runs *inside* the
+  sandbox but what processes *outside* it later trust. Never grant write
+  to all of `~/.cargo` — `~/.cargo/bin` is on PATH and
+  `~/.cargo/config.toml` can set rustc wrappers/runners, so either would
+  let sandboxed code plant something that runs unsandboxed later. Apply
+  the same test to any new grant: "could a write here change what runs
+  outside the sandbox?"
 - `/nix/var/nix/daemon-socket/socket` is allowed conditionally (multi-user
   nix only) so `nix build` inside the sandbox can reach the daemon.
 - The wrapped binary is the **system-installed** Claude Code: the script

@@ -1,6 +1,7 @@
-# Replace `_:` with `{ pkgs, ... }:` etc. when module args are first needed
-# (statix rejects empty patterns, deadnix rejects unused args).
-_:
+# Add `lib` etc. to the lambda args when first needed (deadnix rejects
+# unused args, statix rejects empty `{ ... }` patterns — use `_:` if no
+# args remain).
+{ pkgs, ... }:
 
 {
   # Extra tools in the shell, on top of what `languages.*` bring in.
@@ -61,37 +62,41 @@ _:
   #   - the nix daemon socket, so `nix build` & friends work (multi-user nix)
   #
   # The wrapped binary is the system-installed Claude Code: the first
-  # `claude` on PATH that is not this wrapper itself (everything under
-  # $DEVENV_PROFILE is skipped, otherwise the script would recurse).
+  # `claude` on PATH that is not this wrapper itself. The wrapper shows up
+  # twice, via the devenv profile and via its own store path (a raw
+  # /nix/store/*-claude/bin/claude never matches a real install — those sit
+  # behind profile paths like /etc/profiles or ~/.local/bin).
   scripts.claude = {
     description = "Claude Code inside a nono sandbox";
+    package = pkgs.nushell;
     exec = ''
-      real_claude=""
-      while IFS= read -r candidate; do
-        case "$candidate" in
-          "$DEVENV_PROFILE"/*) continue ;; # this wrapper, via the profile
-          /nix/store/*-claude/bin/claude) continue ;; # this wrapper, via its own store path
-        esac
-        real_claude="$candidate"
-        break
-      done < <(type -ap claude)
-      if [ -z "$real_claude" ]; then
-        echo "error: no claude found on PATH outside the devenv profile; install Claude Code system-wide" >&2
-        exit 127
-      fi
+      def --wrapped main [...args] {
+        let real_claude = which --all claude
+          | where type == "external"
+          | get path
+          | where {|p| not ($p | str starts-with $"($env.DEVENV_PROFILE)/") }
+          | where {|p| $p !~ '^/nix/store/[^/]+-claude/bin/claude$' }
+        if ($real_claude | is-empty) {
+          error make { msg: "no claude found on PATH outside the devenv profile; install Claude Code system-wide" }
+        }
 
-      extra=()
-      if [ -S /nix/var/nix/daemon-socket/socket ]; then
-        extra+=(--allow-file /nix/var/nix/daemon-socket/socket)
-      fi
-      exec nono run --profile claude-code \
-        --allow-cwd \
-        --allow "$HOME/.cargo" \
-        --allow "$HOME/.cache/nix" \
-        --allow "$HOME/.cache/devenv" \
-        --allow "$HOME/.cache/pre-commit" \
-        "''${extra[@]}" \
-        -- "$real_claude" "$@"
+        # Write grants for build caches only. Deliberately NOT all of
+        # ~/.cargo: writable ~/.cargo/bin (on PATH) or ~/.cargo/config.toml
+        # (rustc wrappers/runners) would let sandboxed code plant something
+        # that later runs unsandboxed.
+        let cache_grants = [
+          $"($env.HOME)/.cargo/registry"
+          $"($env.HOME)/.cargo/git"
+          $"($env.HOME)/.cache/nix"
+          $"($env.HOME)/.cache/devenv"
+          $"($env.HOME)/.cache/pre-commit"
+        ] | where {|p| $p | path exists } | each {|p| ["--allow" $p] } | flatten
+
+        let socket = "/nix/var/nix/daemon-socket/socket"
+        let socket_grant = if ($socket | path exists) { ["--allow-file" $socket] } else { [] }
+
+        exec nono run --profile claude-code --allow-cwd ...$cache_grants ...$socket_grant -- ($real_claude | first) ...$args
+      }
     '';
   };
 
