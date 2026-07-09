@@ -31,6 +31,18 @@ Consume the skills elsewhere via the flake:
 nix build github:<owner>/vibe-army   # -> result/share/vibe-army/skills
 ```
 
+Or let Home Manager link every skill into your harnesses:
+
+```nix
+{
+  imports = [ vibe-army.homeManagerModules.default ];
+  vibe-army.claude-code.enable = true;
+  # opencode also reads ~/.claude/skills, so this is only needed
+  # if you want ~/.config/opencode/skills populated independently:
+  vibe-army.opencode.enable = true;
+}
+```
+
 ## Conventions
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org)

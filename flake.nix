@@ -24,9 +24,12 @@
         vibe-army = final.callPackage ./nix/package.nix { };
       };
 
-      # Uncomment if the project ships NixOS / Home Manager modules:
-      # nixosModules.default = ./nix/module.nix;
-      # homeManagerModules.default = ./nix/hm-module.nix;
+      homeManagerModules.default =
+        { pkgs, lib, ... }:
+        {
+          imports = [ ./nix/hm-module.nix ];
+          vibe-army.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        };
 
       checks = forAllSystems (pkgs: {
         package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
