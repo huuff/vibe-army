@@ -26,7 +26,8 @@ Creates a project that is simultaneously:
    devenv's `git-hooks` module (installed automatically on shell entry).
 4. **Agent-ready** — a `claude` script on the shell's PATH that runs Claude
    Code inside a [nono](https://nono.sh) sandbox using the built-in
-   `claude-code` profile.
+   `claude-code` profile, plus an `AGENTS.md` (symlinked as `CLAUDE.md`)
+   with project instructions.
 5. **Secrets via sops** — if the application needs secrets at runtime, they
    are provided with [sops](https://github.com/getsops/sops) (age-encrypted,
    committed to the repo), never as plaintext files or env vars in the shell
@@ -129,7 +130,21 @@ allowlist-based and `~/.config/sops` is not granted (verify with
 This is by design: the agent can edit code that *consumes* secrets but cannot
 decrypt them; the user runs `with-secrets` outside the sandbox.
 
-### 5. Initialize and verify
+### 5. Agent instructions (AGENTS.md)
+
+Agent instructions are harness-agnostic: the real file is `AGENTS.md`,
+and harness-specific names are symlinks into it:
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+```
+
+Write a short `AGENTS.md` (a few lines, not a manual): what the project
+is, how to build/test it, and any conventions an agent must follow.
+Don't duplicate what the code or scaffold already makes obvious. Commit
+both the file and the symlink.
+
+### 6. Initialize and verify
 
 ```bash
 git init -b main
@@ -146,7 +161,7 @@ Commit `devenv.lock` and `flake.lock`; `.pre-commit-config.yaml` and
 If any hook fails on the initial commit, fix the offending file — do not
 bypass with `--no-verify`.
 
-### 6. Hand over
+### 7. Hand over
 
 Tell the user: enter with `devenv shell` (or `direnv allow` for automatic
 activation), run Claude sandboxed with `claude` from inside the shell,
